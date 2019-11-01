@@ -255,6 +255,33 @@ func (g *Goproxy) load() {
 	}
 }
 
+var stagingRepos = []string{
+	"k8s.io/api",
+	"k8s.io/apiextensions-apiserver",
+	"k8s.io/apimachinery",
+	"k8s.io/apiserver",
+	"k8s.io/cli-runtime",
+	"k8s.io/client-go",
+	"k8s.io/cloud-provider",
+	"k8s.io/cluster-bootstrap",
+	"k8s.io/code-generator",
+	"k8s.io/component-base",
+	"k8s.io/cri-api",
+	"k8s.io/csi-translation-lib",
+	"k8s.io/kube-aggregator",
+	"k8s.io/kube-controller-manager",
+	"k8s.io/kube-proxy",
+	"k8s.io/kube-scheduler",
+	"k8s.io/kubectl",
+	"k8s.io/kubelet",
+	"k8s.io/legacy-cloud-providers",
+	"k8s.io/metrics",
+	"k8s.io/node-api",
+	"k8s.io/sample-apiserver",
+	"k8s.io/sample-cli-plugin",
+	"k8s.io/sample-controller",
+}
+
 // ServeHTTP implements the `http.Handler`.
 func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	g.loadOnce.Do(g.load)
@@ -457,6 +484,20 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isStagingRepo := false
+	for _, sr := range stagingRepos {
+		if sr == modulePath {
+			fmt.Println("isStagingRepo", modulePath)
+			isStagingRepo = true
+			break
+		}
+	}
+	if isStagingRepo && strings.HasPrefix(moduleVersion, "v0.1") {
+		oldModuleVersion := moduleVersion
+		moduleVersion = "kubernetes-1." + strings.TrimPrefix(moduleVersion, "v0.")
+		fmt.Println(oldModuleVersion, "->", moduleVersion)
+	}
+
 	goproxyRoot, err := ioutil.TempDir("", "goproxy")
 	if err != nil {
 		g.logError(err)
@@ -496,6 +537,22 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 
 			return
+		}
+
+		if isStagingRepo {
+			fmt.Printf("versions %v\n", mr.Versions)
+			for _, v := range mr.Versions {
+				if strings.HasPrefix(v, "kubernetes-1.") {
+					mrCopy := *mr
+					zeroVer := "v0." + strings.TrimPrefix(moduleVersion, "kubernetes-1.")
+					mrCopy.Versions = append(mrCopy.Versions, zeroVer)
+					mr = &mrCopy
+
+					fmt.Println("adding", zeroVer, "to the list")
+
+					break
+				}
+			}
 		}
 
 		versions := strings.Join(mr.Versions, "\n")
